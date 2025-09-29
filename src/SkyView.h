@@ -25,7 +25,7 @@
 #include <Arduino.h>
 #endif /* ARDUINO */
 
-#define SKYVIEW_FIRMWARE_VERSION  "MB07cVB006"
+#define SKYVIEW_FIRMWARE_VERSION  "MB07cVB006c"
 #define SKYVIEW_IDENT     "SkyView-"
 
 #define DEFAULT_AP_SSID   "SoftRF-abc123"
@@ -45,6 +45,12 @@
 #define VOICE1_SUBDIR     "voice1/"
 #define VOICE2_SUBDIR     "voice2/"
 #define VOICE3_SUBDIR     "voice3/"
+
+#if defined(WAVESHARE_AMOLED_1_75)
+#include "HWCDC.h"
+extern HWCDC USBSerial;
+#define Serial USBSerial
+#endif
 
 typedef struct hardware_info {
     byte  model;

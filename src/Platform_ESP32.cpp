@@ -36,7 +36,8 @@
 #include "BuddyHelper.h"
 
 #include "SkyView.h"
-
+#include <FS.h>
+#include <SD.h>
 #include <battery.h>
 #include "BatteryHelper.h"
 // #include <SD.h>
@@ -58,7 +59,19 @@ std::shared_ptr<Arduino_IIC_DriveBus> IIC_Bus = std::make_shared<Arduino_HWIIC>(
 
 extern TFT_eSPI tft;
 extern TFT_eSprite sprite;
+static bool wireStarted = false;
 
+bool setupWireIfNeeded(int sda, int scl, int freq)
+{
+  if (!wireStarted) 
+  {
+    if (Wire.begin(sda,scl,freq))
+    {
+      wireStarted = true;
+    }
+  }
+  return wireStarted;
+}
 #if defined(USE_EPAPER)
 /*
  * TTGO-T5S. Pin definition
@@ -127,12 +140,13 @@ static union {
   uint8_t efuse_mac[6];
   uint64_t chipmacid;
 };
-#if defined(SOUND)
+#if defined(AUDIO)
 static uint8_t sdcard_files_to_open = 0;
+File wavFile;
 
-SPIClass uSD_SPI(HSPI);
+// SPIClass uSD_SPI(HSPI);
 
-uCDB<SDFileSystemClass, SDFile> ucdb(SD);
+// uCDB<SDFileSystemClass, SDFile> ucdb(SD);
 
 /* variables hold file, state of process wav file and wav file properties */
 wavProperties_t wavProps;
@@ -140,15 +154,18 @@ wavProperties_t wavProps;
 //i2s configuration
 int i2s_num = 0; // i2s port number
 i2s_config_t i2s_config = {
-     .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-     .sample_rate          = 22050,
-     .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
-     .channel_format       = I2S_CHANNEL_FMT_ONLY_LEFT,
-     .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_MSB),
-     .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1, // high interrupt priority
-     .dma_buf_count        = 8,
-     .dma_buf_len          = 128   //Interrupt level 1
-    };
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+    .sample_rate = 22050,  // will be updated per WAV
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 8,
+    .dma_buf_len = 256,
+    .use_apll = false,
+    .tx_desc_auto_clear = true,
+    .fixed_mclk = 0
+};
 
 i2s_pin_config_t pin_config = {
     .bck_io_num   = SOC_GPIO_PIN_BCLK,
@@ -156,7 +173,7 @@ i2s_pin_config_t pin_config = {
     .data_out_num = SOC_GPIO_PIN_DOUT,
     .data_in_num  = -1  // Not used
 };
-#endif /* SOUND*/
+#endif /* AUDIO */
 
 // RTC_DATA_ATTR int bootCount = 0;
 
@@ -178,6 +195,8 @@ void ESP32_TFT_fini(const char *msg)
   
     lcd_brightness(255);
     lcd_PushColors(display_column_offset, 0, 466, 466, (uint16_t*)sprite.getPointer());
+    delay(2000);
+    lcd_brightness(0);
     xSemaphoreGive(spiMutex);
   } else {
     Serial.println("Failed to acquire SPI semaphore!");
@@ -210,12 +229,12 @@ static void ESP32_setup()
       // Only proceed if button is still pressed (i.e., held)
       unsigned long start = millis();
       while (digitalRead(GPIO_NUM_0) == LOW) {
-        if (millis() - start >= 2000) {
+        if (millis() - start >= 1000) {
           break;
         }
       }
       // If released before timeout, go back to sleep
-      if (millis() - start < 2000) {
+      if (millis() - start < 1000) {
       // Wait for button to be released
         while (digitalRead(GPIO_NUM_0) == LOW) {
           delay(10);  // avoid tight loop
@@ -311,6 +330,37 @@ static void ESP32_setup()
     // }
   }
   Serial.println(hw_info.revision);
+  // Initialise SD card.
+#if defined(SD_CARD)
+SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+if (!SD.begin(SD_CS, SPI, SPI_FREQUENCY)) {
+    Serial.println("Card Mount Failed!");
+    return;
+}
+  uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE) {
+      Serial.println("No SD card attached!");
+      return;
+  }
+  else {
+      Serial.println("SD card detected.");
+      Serial.print("SD Card Type: ");
+      switch (cardType) {
+          case CARD_SD:
+              Serial.println("SD");
+              break;
+          case CARD_SDHC:
+              Serial.println("SDHC");
+              break;
+
+          default:
+              Serial.println("Unknown");
+              break;
+      }
+  }
+
+  Serial.println("SD card initialized.");
+#endif //SD_CARD
 }
 
 static uint32_t ESP32_getChipId()
@@ -389,21 +439,14 @@ static void ESP32_WiFiUDP_stopAll()
 
 static void ESP32_Battery_setup()
 {
-#if defined(ESP32S3)
-  // calibrate_voltage(ADC1_GPIO4_CHANNEL);
-  SY6970_setup();
-#else
-  
-  // calibrate_voltage(settings->adapter == ADAPTER_TTGO_T5S ?
-  //                   ADC1_GPIO35_CHANNEL : ADC1_GPIO36_CHANNEL);
-#endif
+  PMU_setup();
 }
 
 static float ESP32_Battery_voltage()
 {
   // Serial.println("Reading battery voltage from SY6970...");
   delay(100); // Give some time for the SY6970 to stabilize
-  float voltage = read_SY6970_voltage() * 0.001;
+  float voltage = read_PMU_voltage() * 0.001;
   Serial.printf("Battery voltage: %.2fV\n", voltage);
   return voltage;
 
@@ -1050,10 +1093,13 @@ static void ESP32_TTS(char *message)
       }
 
       //settings->voice = VOICE_2;
-      strcpy(filename, WAV_FILE_PREFIX);
-      strcat(filename, "POST");
-      strcat(filename, WAV_FILE_SUFFIX);
-      play_file(filename, 0);
+      // strcpy(filename, WAV_FILE_PREFIX);
+      // strcat(filename, "POST");
+      // strcat(filename, WAV_FILE_SUFFIX);
+      // play_file(filename, 0);
+
+      //Start-up tones
+      
 
       /* demonstrate the voice output */
       delay(1500);

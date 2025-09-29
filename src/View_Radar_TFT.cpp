@@ -485,7 +485,7 @@ static void TFT_Draw_Radar()
     float trSin = sin(D2R * (float)ThisAircraft.Track);
     float trCos = cos(D2R * (float)ThisAircraft.Track);  
     for (int i=0; i < MAX_TRACKING_OBJECTS; i++) {
-      if (Container[i].ID && (now() - Container[i].timestamp) <= TFT_EXPIRATION_TIME) {
+      if (Container[i].ID && (now() - Container[i].timestamp) <= ENTRY_EXPIRATION_TIME) {
 
         float rel_x;
         float rel_y;
@@ -574,8 +574,8 @@ static void TFT_Draw_Radar()
         // scale = Container[i].alarm_level + 1;
         //color based on Vertical separation
         // Serial.print(F(" RelativeVertical="));  Serial.println(Container[i].RelativeVertical);
-        if (now() - Container[i].timestamp >= TEAM_EXPIRATION_TIME) {
-          color = TFT_DARKGREY;
+        if ((now() - Container[i].timestamp) >= TFT_EXPIRATION_TIME) {
+          color = TFT_GREY;
         } else if (Container[i].RelativeVertical >  TFT_RADAR_V_THRESHOLD) {
           color = TFT_CYAN;
         } else if (Container[i].RelativeVertical < -TFT_RADAR_V_THRESHOLD) {
@@ -719,6 +719,7 @@ static void TFT_Draw_Radar()
           }
           case 7: // Paraglider
           {
+            uint16_t climbColor = Container[i].ClimbRate >= 3.5 ? TFT_RED : Container[i].ClimbRate >= 2 ? TFT_ORANGE :Container[i].ClimbRate >= 1.5 ? TFT_YELLOW : TFT_GREEN;
             if (!pgSprite.created()) {
               pgSprite.createSprite(36, 36);
               pgSprite.fillSprite(TFT_BLACK);
@@ -735,6 +736,9 @@ static void TFT_Draw_Radar()
             if (isBuddy && blink) {
               pgSprite.fillCircle(sprite_center_x, sprite_center_y, 7, TFT_WHITE);
               }
+            if (Container[i].ClimbRate >= 1.5) {
+              pgSprite.fillCircle(sprite_center_x, sprite_center_y, 7, climbColor);
+            }
             sprite.setPivot(radar_center_x + x, radar_center_y - y);
             pgSprite.pushRotated(&sprite, rel_heading, TFT_BLACK);
               if (isLabels) {

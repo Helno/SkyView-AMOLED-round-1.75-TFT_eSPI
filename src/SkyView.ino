@@ -61,7 +61,9 @@ extern "C" {
   #include "esp_pm.h"
 }
 #endif
-
+#if defined(WAVESHARE_AMOLED_1_75)
+HWCDC USBSerial;
+#endif
 hardware_info_t hw_info = {
   .model    = SOFTRF_MODEL_SKYVIEW,
   .revision = HW_REV_UNKNOWN,

@@ -31,47 +31,16 @@
 #include <Update.h>
 
 /* Maximum of tracked flying objects is now SoC-specific constant */
-#define MAX_TRACKING_OBJECTS  20
+#define MAX_TRACKING_OBJECTS  50
 
 #define SerialInput           Serial1
 /*HARDWARE SPECIFIC*/
 #if defined(AMOLED)
-#include <pin_config.h>
+#include "../pins_config.h"
 #include "Arduino_DriveBus_Library.h"
 
 #endif /* AMOLED */
-// //AMOLED
-// #define LCD_SDIO0 11
-// #define LCD_SDIO1 13
-// #define LCD_SDIO2 14
-// #define LCD_SDIO3 15
-// #define LCD_SCLK 12
-// #define LCD_CS 10
-// #define LCD_RST 17
-// #define LCD_WIDTH 466
-// #define LCD_HEIGHT 466
-// #define LCD_EN 16
 
-// // IIC
-// #define IIC_SDA 7
-// #define IIC_SCL 6
-
-// // TOUCH
-// #define TP_INT 9
-
-// // Battery Voltage ADC
-// #define BATTERY_VOLTAGE_ADC_DATA 4
-
-// // SD
-// #define SD_CS 38
-// #define SD_MOSI 39
-// #define SD_MISO 40
-// #define SD_SCLK 41
-
-// // PCF8563
-// #define PCF8563_INT 9
-// #define SLEEP_WAKE_UP_INT GPIO_NUM_0
-// #endif /* H0175Y003AM */
 /* Peripherals */
 #define SOC_GPIO_PIN_GNSS_RX  36
 #define SOC_GPIO_PIN_GNSS_TX  6
@@ -107,21 +76,26 @@
 #define SOC_SD_PIN_SCK_T5S    14
 #define SOC_SD_PIN_SS_T5S     13
 
-/* TTGO T5S I2S-out pins mapping */
-#define SOC_GPIO_PIN_BCLK     26
-#define SOC_GPIO_PIN_LRCLK    25
-#define SOC_GPIO_PIN_DOUT     19
+
 
 /* TTGO T5S buttons mapping */
 #define SOC_BUTTON_MODE_T5S   26
 #define SOC_BUTTON_UP_T5S     22
 #define SOC_BUTTON_DOWN_T5S   21
 
+
 /* TTGO T5S green LED mapping */
 // #define SOC_GPIO_PIN_LED_T5S  2
 #endif
 
 const uint8_t BUTTON_MODE_PIN = 0;
+#if defined(AUDIO)
+/* LILYGO I2S-out pins mapping */
+#define SOC_GPIO_PIN_BCLK     2
+#define SOC_GPIO_PIN_LRCLK    3
+#define SOC_GPIO_PIN_DOUT     1
+#endif //audio
+
 // #define BUTTON_MODE_PIN      0
 /* Boya Microelectronics Inc. */
 #define BOYA_ID               0x68
@@ -169,6 +143,8 @@ void ESP32_TFT_fini(const char *msg);
 //#define BUILD_SKYVIEW_HD
 
 extern std::shared_ptr<Arduino_IIC_DriveBus> IIC_Bus;
+
+extern bool setupWireIfNeeded(int sda, int scl, int freq = 0U);
 
 #endif /* PLATFORM_ESP32_H */
 
