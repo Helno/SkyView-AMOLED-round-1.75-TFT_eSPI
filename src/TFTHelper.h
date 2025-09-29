@@ -22,13 +22,13 @@
 #include <../pins_config.h>
 
 #if defined(USE_TFT)
-#define SENSOR_SDA  7
-#define SENSOR_SCL  6
-#define SENSOR_IRQ  9
-#define SENSOR_RST  8
+// #define SENSOR_SDA  7
+// #define SENSOR_SCL  6
+// #define SENSOR_IRQ  9
+// #define SENSOR_RST  8
 
 #define EPD_EXPIRATION_TIME     5 /* seconds */
-#define TFT_EXPIRATION_TIME     15 /* seconds for Text display*/ 
+#define TFT_EXPIRATION_TIME     7 /* seconds for Text display*/ 
 
 #define NO_DATA_TEXT            "NO DATA"
 #define NO_FIX_TEXT             "NO FIX "
@@ -99,7 +99,7 @@ void draw_extBattery();
 extern unsigned long TFTTimeMarker;
 extern bool EPD_display_frontpage;
 extern volatile int EPD_task_command;
-extern bool show_compass;
+// extern bool show_compass;
 extern xSemaphoreHandle spiMutex;
 extern bool isLabels;
 

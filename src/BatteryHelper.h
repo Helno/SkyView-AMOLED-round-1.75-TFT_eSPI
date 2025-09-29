@@ -37,10 +37,10 @@ void  Battery_loop(void);
 float Battery_voltage(void);
 float Battery_threshold(void);
 float Battery_cutoff(void);
-extern int read_SY6970_voltage(void);
-extern int read_SY6970_charge_current(void);
-extern int read_SY6970_charging_status(void);
-extern void SY6970_setup(void);
+extern int read_PMU_voltage(void);
+extern int read_PMU_charge_current(void);
+extern int read_PMU_charging_status(void);
+extern void PMU_setup(void);
 extern int charging_status();
 extern void battery_fini(void);
 

@@ -73,6 +73,7 @@ typedef struct traffic_by_dist_struct {
   uint16_t lastSeen;
   uint16_t altitude;
   uint8_t  acftType;
+  time_t   timestamp;
 } traffic_by_dist_t;
 
 #define ALARM_ZONE_NONE         10000  // meters
@@ -82,7 +83,8 @@ typedef struct traffic_by_dist_struct {
 
 /* alarm levels are defined in NMEAHelper.h */
 
-#define ENTRY_EXPIRATION_TIME   7 /* seconds */
+#define ENTRY_EXPIRATION_TIME   30 /* seconds */
+#define ENTRY_STALE_TIME   7 /* seconds */
 #define TRAFFIC_VECTOR_UPDATE_INTERVAL 2 /* seconds */
 #define TRAFFIC_UPDATE_INTERVAL_MS (TRAFFIC_VECTOR_UPDATE_INTERVAL * 1000)
 #define isTimeToUpdateTraffic() (millis() - UpdateTrafficTimeMarker > \

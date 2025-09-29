@@ -1,7 +1,7 @@
 #include <Arduino.h>
 // #include "TouchDrvCST92xx.h"
 #include <driver/touch/TouchDrvCSTXXX.hpp>
-#include "pin_config.h"
+#include "../pins_config.h"
 #include "TouchHelper.h"
 #include "TFTHelper.h"
 #include "NMEAHelper.h"
@@ -32,7 +32,7 @@ unsigned long lastTapTime = 0;
 unsigned long debounceDelay = 100; // in milliseconds
 
 bool isLabels = true;
-bool show_compass = true;;
+// bool show_compass = false;
 extern bool isLocked;
 
 void Touch_2D_Unrotate(float &tX, float &tY) {
@@ -53,12 +53,12 @@ void findTouchedTarget(int rawTouchX, int rawTouchY) {
   // Convert touch to center-relative coordinates (pixels)
   float touchX = rawTouchX - (LCD_WIDTH / 2);
   float touchY = -(rawTouchY - (LCD_HEIGHT / 2));
-  Serial.printf("Touch coordinates: (%f, %f)\n", touchX, touchY);
+  // Serial.printf("Touch coordinates: (%f, %f)\n", touchX, touchY);
 
   // Rotate to NORTH_UP if needed
   if (settings->orientation == DIRECTION_TRACK_UP) {
     Touch_2D_Unrotate(touchX, touchY);
-    Serial.printf("Unrotated touch coordinates: (%f, %f)\n", touchX, touchY);
+    // Serial.printf("Unrotated touch coordinates: (%f, %f)\n", touchX, touchY);
   }
 
   // Get current range in meters
@@ -87,20 +87,20 @@ void findTouchedTarget(int rawTouchX, int rawTouchY) {
   float touchYMeters = touchY * scale;
   int touchHitRadius = range / 10; // 10% of the range as hit radius
 
-  Serial.printf("Touch in meters: (%f, %f)\n", touchXMeters, touchYMeters);
+  // Serial.printf("Touch in meters: (%f, %f)\n", touchXMeters, touchYMeters);
 
   for (int i = 0; i < MAX_TRACKING_OBJECTS; i++) {
     if (Container[i].ID == 0) continue;
     if ((now() - Container[i].timestamp) > TFT_EXPIRATION_TIME) continue;
 
-    Serial.printf("Checking target ID: %06X\n", Container[i].ID);
-    Serial.printf("Target coordinates: (%f, %f)\n", Container[i].RelativeEast, Container[i].RelativeNorth);
+    // Serial.printf("Checking target ID: %06X\n", Container[i].ID);
+    // Serial.printf("Target coordinates: (%f, %f)\n", Container[i].RelativeEast, Container[i].RelativeNorth);
 
     float dx = Container[i].RelativeEast - touchXMeters;
     float dy = Container[i].RelativeNorth - touchYMeters;
 
     if ((dx * dx + dy * dy) < (touchHitRadius * touchHitRadius)) {
-      Serial.printf("Touched target ID: %06X at (%f, %f)\n", Container[i].ID, Container[i].RelativeEast, Container[i].RelativeNorth);
+      // Serial.printf("Touched target ID: %06X at (%f, %f)\n", Container[i].ID, Container[i].RelativeEast, Container[i].RelativeNorth);
       // TODO: handle selection
       isLocked = true;
       setFocusOn(true, Container[i].ID);
@@ -114,17 +114,20 @@ void findTouchedTarget(int rawTouchX, int rawTouchY) {
 
 
 void touchWakeUp() {
-    digitalWrite(SENSOR_RST, HIGH);
-    delay(100);
-    touchSensor.wakeup();
+  pinMode(TOUCH_RST, OUTPUT);
+  digitalWrite(TOUCH_RST, LOW);
+  delay(30);
+  digitalWrite(TOUCH_RST, HIGH);
+  delay(100);
+  touchSensor.wakeup();
 }
 
 void Touch_setup() {
   
-    attachInterrupt(TP_INT, []()
+    attachInterrupt(TOUCH_INT, []()
     { IIC_Interrupt_Flag = true; }, FALLING);
-  
-        touchSensor.setPins(SENSOR_RST, SENSOR_IRQ);
+
+        touchSensor.setPins(TOUCH_RST, TOUCH_INT);
   if (touchSensor.begin(Wire, touchAddress, IIC_SDA, IIC_SCL) == false)
   {
       Serial.println("CST9217 initialization failed");
@@ -209,26 +212,22 @@ void tapHandler(int x, int y) {
   else if (LCD_WIDTH - x > 320 && LCD_WIDTH - x < 400 && LCD_HEIGHT - y > 170 && LCD_HEIGHT - y < 230 && TFT_view_mode == VIEW_MODE_SETTINGS) {
     //Show Compass Page
     Serial.println("Changing Compass View ");
-    if (!show_compass) {
-      show_compass = true;
+    if (!settings->compass) {
+      settings->compass = true;
       settings_page();
     }
     else {
-      show_compass = false;
+      settings->compass = false;
       settings_page();
     }
   } 
-  else if (LCD_WIDTH - x > 0 && LCD_WIDTH - x < 400 && LCD_HEIGHT - y > 70 && LCD_HEIGHT - y < 150 && TFT_view_mode == VIEW_MODE_TEXT) {
-    //Lock focus on current target
-    if (!isLocked) {
-      isLocked = true;
-     setFocusOn(true);
-     Serial.println("Locking focus on current target ");
+  else if (LCD_WIDTH - x > 400 && LCD_WIDTH - x < 466 && LCD_HEIGHT - y > 170 && LCD_HEIGHT - y < 280 && TFT_view_mode == VIEW_MODE_TEXT) {
+    //Togle Average Vario
+    if (!show_avg_vario) {
+      show_avg_vario = true;
     }
     else {
-      isLocked = false;
-      setFocusOn(false);
-      Serial.println("Unlocking focus from current target ");
+      show_avg_vario = false;
     }
     TFTTimeMarker = 0; // Force update of the display
   } else if (TFT_view_mode == VIEW_MODE_RADAR) {

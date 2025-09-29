@@ -8,6 +8,7 @@
 #include "TouchHelper.h"
 #include "WiFiHelper.h"
 #include "BatteryHelper.h"
+#include "View_Text_TFT.h"
 // #include <Adafruit_GFX.h>    // Core graphics library
 // #include "Arduino_GFX_Library.h"
 #include "Platform_ESP32.h"
@@ -177,17 +178,7 @@ void draw_first()
   sprite.setTextColor(TFT_WHITE, TFT_BLACK);
   sprite.setFreeFont(&Orbitron_Light_32);
   sprite.setCursor(144, 160);
-  // sprite.setTextSize(2);
-  sprite.printf("SkyView");
-  Serial.print("SkyView width: ");
-  Serial.println(sprite.textWidth("SkyView"));
-  Serial.print("SkyView height: ");
-  Serial.println(sprite.fontHeight(4));
   sprite.setFreeFont(&FreeSansBold12pt7b);
-  Serial.print("powered by... width: ");
-  Serial.println(sprite.textWidth("powered by SoftRF"));
-  Serial.print("powered by ... height: ");
-  Serial.println(sprite.fontHeight(4));
   sprite.fillRect(114,200,66,66,TFT_RED);
   sprite.fillRect(200,200,66,66,TFT_GREEN);
   sprite.fillRect(286,200,66,66,TFT_BLUE); 
@@ -206,15 +197,15 @@ void draw_first()
 }
 
 void TFT_setup(void) {
-  pinMode(LCD_EN, OUTPUT);
+  pinMode(LCD_EN, OUTPUT);  
   digitalWrite(LCD_EN, HIGH);
   delay(30);
-  pinMode(SENSOR_RST, OUTPUT);
-  digitalWrite(SENSOR_RST, LOW);
+  pinMode(TOUCH_RST, OUTPUT);
+  digitalWrite(TOUCH_RST, LOW);
   delay(30);
-  digitalWrite(SENSOR_RST, HIGH);
+  digitalWrite(TOUCH_RST, HIGH);
   delay(50);
-  Wire.begin(SENSOR_SDA, SENSOR_SCL);
+  setupWireIfNeeded(IIC_SDA, IIC_SCL);
   CO5300_init();
   sprite.setColorDepth(16);
   Serial.print("TFT_setup. PSRAM_ENABLE: ");
@@ -288,7 +279,7 @@ void TFT_Mode(boolean next)
       }
       else {
         if (xSemaphoreTake(spiMutex, portMAX_DELAY)) {
-          if (show_compass) {
+          if (settings->compass) {
           TFT_view_mode = VIEW_MODE_COMPASS;
           if (!compasSprite.created()) {
             compasSprite.createSprite(466, 466);
@@ -319,7 +310,7 @@ void TFT_Mode(boolean next)
       }
 
 }   else if (TFT_view_mode == VIEW_MODE_TEXT) {
-        if (next && show_compass) {
+        if (next && settings->compass) {
           if (xSemaphoreTake(spiMutex, portMAX_DELAY)) {
             TFT_view_mode = VIEW_MODE_COMPASS;
             if (!compasSprite.created()) {
@@ -337,7 +328,7 @@ void TFT_Mode(boolean next)
               compas2Sprite.setColorDepth(16);
               compas2Sprite.setSwapBytes(true);
             }
-            lcd_brightness(255);
+            lcd_brightness(220);
             TFTTimeMarker = millis() + 1001;
             TFTrefresh = true;
             xSemaphoreGive(spiMutex);
@@ -352,6 +343,7 @@ void TFT_Mode(boolean next)
           TFT_view_mode = VIEW_MODE_RADAR;
             bearingSprite.deleteSprite();
             TFTTimeMarker = millis() + 1001;
+            setFocusOn(false); // reset focus
             xSemaphoreGive(spiMutex);
             delay(10);
             // EPD_display_frontpage = false;
@@ -481,7 +473,7 @@ void settings_page() {
     text_y = 200;
     sprite.setCursor(button_x - 300, text_y);
     sprite.printf("Compass Page");
-    if (show_compass) {
+    if (settings->compass) {
       settings_button(button_x, text_y, true);
     } else {
       settings_button(button_x, text_y, false); 
