@@ -197,6 +197,7 @@ void ESP32_TFT_fini(const char *msg)
     lcd_PushColors(display_column_offset, 0, 466, 466, (uint16_t*)sprite.getPointer());
     delay(2000);
     lcd_brightness(0);
+    lcd_sleep();
     xSemaphoreGive(spiMutex);
   } else {
     Serial.println("Failed to acquire SPI semaphore!");
@@ -205,18 +206,19 @@ void ESP32_TFT_fini(const char *msg)
 
 void ESP32_fini()
 {
-  WiFi_fini();
-  battery_fini();
-  // SPI.end();
   Serial.println("Putting device to deep sleep...");
   delay(1000);
-  lcd_sleep();
   BuddyManager::clearBuddyList();
   EEPROM_store();
   delay(1000);
   gpio_hold_en(GPIO_NUM_0);
-  esp_sleep_enable_ext0_wakeup(SLEEP_WAKE_UP_INT, LOW);
+  // make sure BOOT button is the only wake up source
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, LOW);
   SPI.end();
+#if defined (XPOWERS_CHIP_AXP2101)
+  prepare_AXP2101_deep_sleep();
+#endif
   esp_deep_sleep_start();
 }
 
@@ -1129,6 +1131,11 @@ AceButton button_mode(BUTTON_MODE_PIN);
 // AceButton button_up  (SOC_BUTTON_UP_T5S);
 // AceButton button_down(SOC_BUTTON_DOWN_T5S);
 
+// State machine for alternative shutdown sequence
+static unsigned long shortPressTime = 0;
+static bool waitingForLongPress = false;
+static const unsigned long SHUTDOWN_SEQUENCE_TIMEOUT = 3000; // 3 seconds
+
 // The event handler for the button.
 void handleEvent(AceButton* button, uint8_t eventType,
     uint8_t buttonState) {
@@ -1151,18 +1158,52 @@ void handleEvent(AceButton* button, uint8_t eventType,
 
   switch (eventType) {
     case AceButton::kEventPressed:
-      break;
-    case AceButton::kEventReleased:
-      if (button == &button_mode) {
-        TFT_Mode(true);
+      // Check if we're in the middle of shutdown sequence
+      if (waitingForLongPress && (millis() - shortPressTime < SHUTDOWN_SEQUENCE_TIMEOUT)) {
+        Serial.println(F("Shutdown sequence: Long press detected"));
       }
       break;
+
+    case AceButton::kEventReleased:
+      if (button == &button_mode) {
+        // Check if this completes the shutdown sequence
+        if (waitingForLongPress && (millis() - shortPressTime < SHUTDOWN_SEQUENCE_TIMEOUT)) {
+          // User did short-release-short, not the full sequence
+          waitingForLongPress = false;
+        } else if (!waitingForLongPress) {
+          // This is a normal short press and release
+          // Start the shutdown sequence timer
+          shortPressTime = millis();
+          waitingForLongPress = true;
+          Serial.println(F("Shutdown sequence: Short press detected. Long press within 3 seconds for full power off."));
+          TFT_Mode(true);
+        }
+      }
+      break;
+
     case AceButton::kEventLongPressed:
       if (button == &button_mode) {
-        shutdown("NORMAL OFF");
+        // Check if this is part of the alternative shutdown sequence
+        if (waitingForLongPress && (millis() - shortPressTime < SHUTDOWN_SEQUENCE_TIMEOUT)) {
+          // Alternative shutdown: short press + long press within 3 seconds
+          Serial.println(F("Alternative shutdown: Disconnecting battery..."));
+          waitingForLongPress = false;
+          ESP32_TFT_fini("FULL POWER OFF");
+          power_off(); // This will disconnect BATFET on LilyGo
+          
+        } else {
+          // Normal long press shutdown (no short press before)
+          shutdown("NORMAL OFF");
+        }
         Serial.println(F("This will never be printed."));
       }
       break;
+  }
+
+  // Timeout the shutdown sequence if too much time has passed
+  if (waitingForLongPress && (millis() - shortPressTime >= SHUTDOWN_SEQUENCE_TIMEOUT)) {
+    waitingForLongPress = false;
+    Serial.println(F("Shutdown sequence timeout - returning to normal operation"));
   }
 }
     }

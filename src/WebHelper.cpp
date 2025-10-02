@@ -733,7 +733,7 @@ void handleRoot() {
   dtostrf(vdd, 4, 2, str_Vcc);
 
   const char* charge_status_str = charging_status_string(charging_status());
-  String chargingCurrent = String(read_SY6970_charge_current());
+  String chargingCurrent = String(read_PMU_charge_current());
 
   int cpu_freq = get_cpu_frequency_mhz();
   String lastBatteryLog = formatBatteryLog(getLastBatteryLogEntry());

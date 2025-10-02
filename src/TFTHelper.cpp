@@ -503,7 +503,7 @@ void settings_page() {
 
     text_y = 400;
     sprite.setCursor(button_x - 120, 380);
-    sprite.printf("Sleep");
+    sprite.printf("Full Shutdown");
 
     sprite.setCursor(button_x - 130, 440);
     sprite.printf("BACK");

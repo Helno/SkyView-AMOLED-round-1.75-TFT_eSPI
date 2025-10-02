@@ -71,7 +71,7 @@ std::vector<String> scanForBLEDevices(uint32_t scanTimeSeconds) {
   scanner->clearResults();  // Free memory from last scan
 
   Serial.println("[BLE] Starting scan...");
-  NimBLEScanResults results = scanner->start(3, true);  // Convert seconds to milliseconds
+  NimBLEScanResults results = scanner->start(500, true);  // Convert seconds to milliseconds
   Serial.printf("[BLE] Scan completed: %d device(s) found.\n", results.getCount());
 
   std::set<String> uniqueNames;

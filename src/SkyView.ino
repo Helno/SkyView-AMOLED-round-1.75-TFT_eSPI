@@ -272,5 +272,12 @@ void shutdown(const char *msg)
 #if defined(BUTTONS)
   SoC->Button_fini();
 #endif /* BUTTONS */
+  battery_fini();
+  //TODO: Task delete
+  // if (touchTaskHandle != NULL) {
+  //   vTaskDelete(touchTaskHandle);
+  //   touchTaskHandle = NULL;
+  // }
+  
   ESP32_fini();
 }

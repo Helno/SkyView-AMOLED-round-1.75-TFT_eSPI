@@ -61,7 +61,12 @@ void PMU_setup() {
   }
   Serial.println("SY6970 init success");
   PMU_initialized = true;
-  Serial.println("SY6970 setup Chrging parameters");
+  // Set BATFET mode to ON
+  bool ok = SY6970->IIC_Write_Device_State(
+      Arduino_IIC_Power::Device::POWER_BATFET_MODE,
+      Arduino_IIC_Power::Device_State::POWER_DEVICE_ON
+  );
+  Serial.println("SY6970 setup Charging parameters");
   SY6970->IIC_Write_Device_State(SY6970->Arduino_IIC_Power::Device::POWER_DEVICE_ADC_MEASURE, SY6970->Arduino_IIC_Power::Device_State::POWER_DEVICE_ON);
   SY6970->IIC_Write_Device_Value(SY6970->Arduino_IIC_Power::Device_Value::POWER_DEVICE_WATCHDOG_TIMER, 0);
   Serial.println("SY6970 Device ON and set Watchdog Timer to 0");
@@ -361,6 +366,30 @@ void ShowPowerOnTime(uint8_t opt)
 }
 
 #endif //defined(XPOWERS_CHIP_AXP2101)
+
+void power_off() {
+#if defined(LILYGO_AMOLED_1_75)
+      if (!PMU_initialized || !SY6970) {
+        Serial.println("SY6970 not initialized, cannot power off.");
+        return;
+    }
+
+    bool ok = SY6970->IIC_Write_Device_State(
+        Arduino_IIC_Power::Device::POWER_BATFET_MODE,
+        Arduino_IIC_Power::Device_State::POWER_DEVICE_OFF
+    );
+
+    if (ok) {
+        Serial.println("Battery disconnected: Entering shipping mode.");
+        // After this, ESP32 will lose power if not powered via USB
+    } else {
+        Serial.println("Failed to set BATFET off (shipping mode).");
+    }
+#elif defined(WAVESHARE_AMOLED_1_75)
+  power.shutdown();
+#endif
+}
+
 void Battery_setup()
 {
   SoC->Battery_setup();

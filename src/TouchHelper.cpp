@@ -12,6 +12,7 @@
 #include "EEPROMHelper.h"
 #include <TimeLib.h>
 #include "TrafficHelper.h"
+#include "BatteryHelper.h"
 // Create an instance of the CST9217 class
 
 TouchDrvCST92xx touchSensor;
@@ -155,14 +156,10 @@ void tapHandler(int x, int y) {
   else if (LCD_WIDTH - x > 340 && LCD_WIDTH - x < 410 && LCD_HEIGHT - y > 340 && LCD_HEIGHT - y < 415
     && TFT_view_mode == VIEW_MODE_SETTINGS) {
     //Sleep device and wake up on button press wake up button is PIN 0
-    Serial.println("Going to Sleep ");
-    // vTaskDelete(touchTaskHandle);
-    // touchTaskHandle = NULL;
-    shutdown("SLEEP");
-    // ESP32_TFT_fini("SLEEP");
-    // delay(1000);
-    // ESP32_fini();
-    // delay(1000);
+    Serial.println("Going to Full Shutdown");
+
+    power_off();
+
   } 
   else if (LCD_WIDTH - x > 160 && LCD_WIDTH - x < 330 && LCD_HEIGHT - y > 410 && LCD_HEIGHT - y < 466
     && TFT_view_mode == VIEW_MODE_SETTINGS) {
