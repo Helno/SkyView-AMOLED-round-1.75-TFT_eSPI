@@ -451,7 +451,7 @@ void Battery_loop()
       if (voltage > 2.0 && voltage < Battery_cutoff()) {
         if (Battery_cutoff_count > 3) {
           ESP32_TFT_fini("LOW BATTERY");
-          shutdown("LOW BATTERY");
+          power_off(); // cut off the battery "BATFET"
         } else {
           Battery_cutoff_count++;
         }

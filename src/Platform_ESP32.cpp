@@ -1131,82 +1131,66 @@ AceButton button_mode(BUTTON_MODE_PIN);
 // AceButton button_up  (SOC_BUTTON_UP_T5S);
 // AceButton button_down(SOC_BUTTON_DOWN_T5S);
 
-// State machine for alternative shutdown sequence
-static unsigned long shortPressTime = 0;
-static bool waitingForLongPress = false;
-static const unsigned long SHUTDOWN_SEQUENCE_TIMEOUT = 3000; // 3 seconds
+// Track if long press just opened the menu
+static bool justOpenedMenu = false;
+
+// Button task handle
+TaskHandle_t buttonTaskHandle = NULL;
+
+// Forward declaration
+void buttonTask(void *parameter);
 
 // The event handler for the button.
 void handleEvent(AceButton* button, uint8_t eventType,
     uint8_t buttonState) {
 
-// #if 0
-  // Print out a message for all events.
-  if        (button == &button_mode) {
-    Serial.print(F("MODE "));
-  // } else if (button == &button_up) {
-  //   Serial.print(F("UP   "));
-  // } else if (button == &button_down) {
-  //   Serial.print(F("DOWN "));
-  // }
-
-  Serial.print(F("handleEvent(): eventType: "));
-  Serial.print(eventType);
-  Serial.print(F("; buttonState: "));
-  Serial.println(buttonState);
-// #endif
-
   switch (eventType) {
     case AceButton::kEventPressed:
-      // Check if we're in the middle of shutdown sequence
-      if (waitingForLongPress && (millis() - shortPressTime < SHUTDOWN_SEQUENCE_TIMEOUT)) {
-        Serial.println(F("Shutdown sequence: Long press detected"));
-      }
+      // Button pressed - no action
       break;
 
     case AceButton::kEventReleased:
+      // With suppress features, RELEASED acts as single click (immediate)
+      // CLICKED event comes later if no double-click detected
       if (button == &button_mode) {
-        // Check if this completes the shutdown sequence
-        if (waitingForLongPress && (millis() - shortPressTime < SHUTDOWN_SEQUENCE_TIMEOUT)) {
-          // User did short-release-short, not the full sequence
-          waitingForLongPress = false;
-        } else if (!waitingForLongPress) {
-          // This is a normal short press and release
-          // Start the shutdown sequence timer
-          shortPressTime = millis();
-          waitingForLongPress = true;
-          Serial.println(F("Shutdown sequence: Short press detected. Long press within 3 seconds for full power off."));
+        // Clear the flag after any release
+        justOpenedMenu = false;
+
+        // Don't handle as click here - let CLICKED handle it after delay
+      }
+      break;
+
+    case AceButton::kEventClicked:
+      // This fires after double-click timeout if it was just a single click
+      if (button == &button_mode) {
+        if (showingPowerMenu) {
+          // Single click when menu is showing = Sleep
+          showingPowerMenu = false;
+          shutdown("SLEEP");
+        } else {
+          // Single click when menu not showing = Change mode
           TFT_Mode(true);
         }
       }
       break;
 
+    case AceButton::kEventDoubleClicked:
+      if (button == &button_mode) {
+      // Double click when menu not showing = Restore previous view
+          TFT_DoubleClick();
+      }
+      break;
+
     case AceButton::kEventLongPressed:
       if (button == &button_mode) {
-        // Check if this is part of the alternative shutdown sequence
-        if (waitingForLongPress && (millis() - shortPressTime < SHUTDOWN_SEQUENCE_TIMEOUT)) {
-          // Alternative shutdown: short press + long press within 3 seconds
-          Serial.println(F("Alternative shutdown: Disconnecting battery..."));
-          waitingForLongPress = false;
-          ESP32_TFT_fini("FULL POWER OFF");
-          power_off(); // This will disconnect BATFET on LilyGo
-          
-        } else {
-          // Normal long press shutdown (no short press before)
-          shutdown("NORMAL OFF");
-        }
-        Serial.println(F("This will never be printed."));
+        // Long press - show power options menu
+        justOpenedMenu = true;  // Set flag to ignore the release after long press
+        TFT_show_power_menu();
       }
       break;
   }
-
-  // Timeout the shutdown sequence if too much time has passed
-  if (waitingForLongPress && (millis() - shortPressTime >= SHUTDOWN_SEQUENCE_TIMEOUT)) {
-    waitingForLongPress = false;
-    Serial.println(F("Shutdown sequence timeout - returning to normal operation"));
-  }
 }
-    }
+  
 
 /* Callbacks for push button interrupt */
 // void onModeButtonEvent() {
@@ -1225,28 +1209,44 @@ static void ESP32_Button_setup()
 {
   int mode_button_pin = BUTTON_MODE_PIN;
   // Button(s) uses internal pull up resistor.
-  pinMode(mode_button_pin, INPUT);
+  pinMode(mode_button_pin, INPUT_PULLUP);
 
-  button_mode.init(mode_button_pin);
+  button_mode.init(mode_button_pin, HIGH, 0);  // Active LOW button (pressed = LOW)
 
   // Configure the ButtonConfig with the event handler, and enable all higher
   // level events.
   ButtonConfig* ModeButtonConfig = button_mode.getButtonConfig();
   ModeButtonConfig->setEventHandler(handleEvent);
-  ModeButtonConfig->setFeature(ButtonConfig::kFeatureClick);
+
+  // Enable features - following AceButton example for DoubleClick
+  ModeButtonConfig->setFeature(ButtonConfig::kFeatureDoubleClick);
   ModeButtonConfig->setFeature(ButtonConfig::kFeatureLongPress);
+  ModeButtonConfig->setFeature(ButtonConfig::kFeatureSuppressClickBeforeDoubleClick);
+  ModeButtonConfig->setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
+  ModeButtonConfig->setFeature(ButtonConfig::kFeatureSuppressAfterLongPress);
+
+  // Set timing parameters
   ModeButtonConfig->setDebounceDelay(15);
-  ModeButtonConfig->setClickDelay(100);
-  ModeButtonConfig->setDoubleClickDelay(1000);
+  ModeButtonConfig->setClickDelay(300);
+  ModeButtonConfig->setDoubleClickDelay(400);
   ModeButtonConfig->setLongPressDelay(2000);
 
-  // attachInterrupt(digitalPinToInterrupt(mode_button_pin), onModeButtonEvent, CHANGE );
+  // Create dedicated button task pinned to core 1 (same as touch task)
+  xTaskCreatePinnedToCore(buttonTask, "Button Task", 4096, NULL, 1, &buttonTaskHandle, 1);
+}
 
+// Button task - runs continuously to check button state
+void buttonTask(void *parameter) {
+  while(true) {
+    button_mode.check();
+    vTaskDelay(pdMS_TO_TICKS(5)); // Check every 5ms for very responsive detection
+  }
 }
 
 static void ESP32_Button_loop()
 {
-  button_mode.check();
+  // Button checking now happens in dedicated task
+  // This function kept for compatibility but does nothing
 }
 
 static void ESP32_Button_fini()

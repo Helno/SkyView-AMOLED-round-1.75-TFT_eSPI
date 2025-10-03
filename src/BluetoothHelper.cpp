@@ -77,7 +77,7 @@ std::vector<String> scanForBLEDevices(uint32_t scanTimeSeconds) {
   }
 
   Serial.println("[BLE] Starting scan...");
-  NimBLEScanResults results = scanner->start(500, true);  // 500ms scan time
+  NimBLEScanResults results = scanner->start(10, true);  // 10 seconds scan time
   Serial.printf("[BLE] Scan completed: %d device(s) found.\n", results.getCount());
 
   // Re-enable watchdog after scan (if it was enabled)
@@ -361,7 +361,7 @@ static void ESP32_Bluetooth_loop()
         NimBLEScan* scan = NimBLEDevice::getScan();
         scan->setAdvertisedDeviceCallbacks(new AppAdvertisedDeviceCallbacks(), false);
         scan->setActiveScan(true);
-        scan->start(50, false);  // 50 deciseconds = 5 seconds
+        scan->start(5, false);  
 #else
         BLEDevice::getScan()->start(3, false);
 #endif /* USE_NIMBLE */
