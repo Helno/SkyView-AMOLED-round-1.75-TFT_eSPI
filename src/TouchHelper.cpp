@@ -144,20 +144,48 @@ void Touch_setup() {
 
 void tapHandler(int x, int y) {
   //It looks like the touch sensor is upside down so we need to flip the coordinates
-  //x = LCDWIDTH - x;  
+  //x = LCDWIDTH - x;
   //y = LCDHIEGHT - y;
   Serial.println("Tap detected at coordinates: " + String(x) + ", " + String(y));
+
+  // Handle power menu taps
+  if (showingPowerMenu) {
+    // Sleep button (top button: 83,160 to 383,240)
+    if (LCD_WIDTH - x > 83 && LCD_WIDTH - x < 383 && LCD_HEIGHT - y > 160 && LCD_HEIGHT - y < 240) {
+      Serial.println("Sleep selected from power menu");
+      showingPowerMenu = false;
+      shutdown("SLEEP");
+      return;
+    }
+    // Full Shutdown button (bottom button: 83,260 to 383,340)
+    else if (LCD_WIDTH - x > 83 && LCD_WIDTH - x < 383 && LCD_HEIGHT - y > 260 && LCD_HEIGHT - y < 340) {
+      Serial.println("Full Shutdown selected from power menu");
+      showingPowerMenu = false;
+      ESP32_TFT_fini("FULL POWER OFF");
+      power_off();
+      return;
+    }
+    // Any other tap dismisses the menu and restores previous view
+    else {
+      Serial.println("Power menu dismissed");
+      showingPowerMenu = false;
+      // Restore previous view mode
+      TFT_DoubleClick();
+      return;
+    }
+  }
+
   bool hasFix = settings->protocol == PROTOCOL_NMEA  ? isValidGNSSFix() : false;
   if (LCD_WIDTH - x > 290 && LCD_WIDTH - x < 400 && LCD_HEIGHT - y > 360 && LCD_HEIGHT - y <  466
     && (TFT_view_mode == VIEW_MODE_TEXT || (TFT_view_mode == VIEW_MODE_RADAR && !hasFix))) {
     Serial.println("Going to SettingsPage ");
     settings_page();
-  } 
+  }
   else if (LCD_WIDTH - x > 340 && LCD_WIDTH - x < 410 && LCD_HEIGHT - y > 340 && LCD_HEIGHT - y < 415
     && TFT_view_mode == VIEW_MODE_SETTINGS) {
     //Sleep device and wake up on button press wake up button is PIN 0
     Serial.println("Going to Full Shutdown");
-
+    ESP32_TFT_fini("FULL SHUTDOWN");
     power_off();
 
   } 

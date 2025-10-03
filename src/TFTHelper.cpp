@@ -249,10 +249,13 @@ void TFT_loop(void) {
   case VIEW_MODE_COMPASS:
     TFT_compass_loop();
     break;
+  case VIEW_MODE_POWER:
+    // Power menu is static, no loop needed
+    break;
   default:
     break;
   }
-  
+
   yield();  // Ensure the watchdog gets reset
   delay(20);
 }
@@ -502,7 +505,7 @@ void settings_page() {
 
 
     text_y = 400;
-    sprite.setCursor(button_x - 120, 380);
+    sprite.setCursor(button_x - 240, 380);
     sprite.printf("Full Shutdown");
 
     sprite.setCursor(button_x - 130, 440);
@@ -512,7 +515,7 @@ void settings_page() {
 
     sprite.setSwapBytes(true);
     sprite.pushImage(button_x, 350, 48, 47, power_button_small);
-    
+
     lcd_PushColors(display_column_offset, 0, 466, 466, (uint16_t*)sprite.getPointer());
     lcd_brightness(255);
     xSemaphoreGive(spiMutex);
@@ -521,4 +524,66 @@ void settings_page() {
 }
 
 }
+
+// Power menu state flag
+bool showingPowerMenu = false;
+
+void TFT_DoubleClick()
+{
+  if (TFT_view_mode == VIEW_MODE_POWER) {
+    // Double click when menu is showing = Full shutdown
+    showingPowerMenu = false;
+    ESP32_TFT_fini("FULL POWER OFF");
+    power_off();
+  } else {
+    // Double click - go to settings page
+    settings_page();
+  }
+}
+
+void TFT_show_power_menu()
+{
+  if (xSemaphoreTake(spiMutex, portMAX_DELAY)) {
+    // Save current view mode so we can restore it
+    prev_TFT_view_mode = TFT_view_mode;
+    // Set to power menu view mode
+    TFT_view_mode = VIEW_MODE_POWER;
+
+    sprite.fillSprite(TFT_BLACK);
+
+    // Title - smaller font and lower position
+    sprite.setTextColor(TFT_WHITE, TFT_BLACK);
+    sprite.setFreeFont(&Orbitron_Light_24);
+    const char* title = "POWER OPTIONS";
+    uint16_t title_wd = sprite.textWidth(title);
+    sprite.setCursor(LCD_WIDTH / 2 - title_wd / 2, 100);
+    sprite.printf(title);
+
+    // Sleep option (top button) - single click
+    sprite.fillRoundRect(83, 160, 300, 80, 10, TFT_BLUEBUTTON);
+    sprite.setTextColor(TFT_WHITE, TFT_BLUEBUTTON);
+    sprite.setFreeFont(&Orbitron_Light_24);
+    const char* sleep_txt = "SLEEP";
+    uint16_t sleep_wd = sprite.textWidth(sleep_txt);
+    sprite.setCursor(LCD_WIDTH / 2 - sleep_wd / 2, 210);
+    sprite.printf(sleep_txt);
+
+    // Full Shutdown option (bottom button) - double click
+    sprite.fillRoundRect(83, 260, 300, 80, 10, TFT_RED);
+    sprite.setTextColor(TFT_WHITE, TFT_RED);
+    const char* shutdown_txt = "FULL SHUTDOWN";
+    uint16_t shutdown_wd = sprite.textWidth(shutdown_txt);
+    sprite.setCursor(LCD_WIDTH / 2 - shutdown_wd / 2, 310);
+    sprite.printf(shutdown_txt);
+
+    lcd_PushColors(display_column_offset, 0, 466, 466, (uint16_t*)sprite.getPointer());
+    lcd_brightness(255);
+
+    showingPowerMenu = true;
+    xSemaphoreGive(spiMutex);
+  } else {
+    Serial.println("Failed to acquire SPI semaphore!");
+  }
+}
+
 #endif /* USE_TFT */
