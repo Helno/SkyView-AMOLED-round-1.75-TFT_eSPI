@@ -122,6 +122,7 @@ typedef struct nmea_status_struct {
 
 void NMEA_setup(void);
 void NMEA_loop(void);
+void NMEA_ParseChar(char c);  // Public interface for demo mode
 
 bool NMEA_isConnected(void);
 bool NMEA_hasGNSS(void);
