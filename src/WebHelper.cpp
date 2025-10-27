@@ -446,6 +446,7 @@ void handleSettings() {
 <option %s value='%d'>WiFi UDP</option>\
 <option %s value='%d'>Bluetooth SPP</option>\
 <option %s value='%d'>Bluetooth LE</option>\
+<option %s value='%d'>Demo File</option>\
 </select>\
 </td>\
 </tr>\
@@ -471,6 +472,7 @@ void handleSettings() {
   (settings->connection == CON_WIFI_UDP      ? "selected" : ""), CON_WIFI_UDP,
   (settings->connection == CON_BLUETOOTH_SPP ? "selected" : ""), CON_BLUETOOTH_SPP,
   (settings->connection == CON_BLUETOOTH_LE  ? "selected" : ""), CON_BLUETOOTH_LE,
+  (settings->connection == CON_DEMO_FILE     ? "selected" : ""), CON_DEMO_FILE,
   (settings->protocol   == PROTOCOL_NMEA     ? "selected" : ""), PROTOCOL_NMEA,
   (settings->protocol   == PROTOCOL_GDL90    ? "selected" : ""), PROTOCOL_GDL90,
   (settings->baudrate   == B4800             ? "selected" : ""), B4800,
@@ -775,7 +777,8 @@ void handleRoot() {
     settings->connection == CON_SERIAL        ? "Serial" :
     settings->connection == CON_BLUETOOTH_SPP ? "Bluetooth SPP" :
     settings->connection == CON_BLUETOOTH_LE  ? "Bluetooth LE" :
-    settings->connection == CON_WIFI_UDP      ? "WiFi" : "NONE"
+    settings->connection == CON_WIFI_UDP      ? "WiFi" :
+    settings->connection == CON_DEMO_FILE     ? "Demo File" : "NONE"
   );
 
   len = strlen(offset);
@@ -902,6 +905,44 @@ void handleBuddyList() {
     }
     function downloadFile() {
       window.location.href = '/download-buddy';
+    }
+  </script>
+</body>
+</html>
+  )rawliteral");
+}
+
+void handleDemoFile() {
+  server.send(200, "text/html", R"rawliteral(
+<html>
+  <head>
+    <title>Demo File Management</title>
+  </head>
+<body>
+  <h1>Upload or Download Demo NMEA File</h1>
+  <p>Upload an NMEA file for demo/playback mode. The file will be played back line by line.</p>
+  <p>Default line delay: 160ms (adjustable). Target: 1 second between $GPGGA sentences.</p>
+  <input type="file" id="fileInput" accept=".nmea,.txt">
+  <button onclick="uploadFile()">Upload</button>
+  <button onclick="downloadFile()">Download</button>
+  <br><br>
+  <a href="/settings">Back to Settings</a>
+  <script>
+    function uploadFile() {
+      let file = document.getElementById('fileInput').files[0];
+      if (!file) {
+        alert('Please select a file first');
+        return;
+      }
+      let formData = new FormData();
+      formData.append('file', file);
+      fetch('/upload-demo', { method: 'POST', body: formData })
+      .then(response => response.text())
+      .then(data => alert(data))
+      .catch(error => alert('Upload failed: ' + error));
+    }
+    function downloadFile() {
+      window.location.href = '/download-demo';
     }
   </script>
 </body>
@@ -1049,13 +1090,14 @@ void Web_setup()
   server.on ( "/", handleRoot );
   server.on ( "/settings", handleSettings );
   server.on("/buddylist", handleBuddyList);
+  server.on("/demofile", handleDemoFile);
 
   server.on("/upload-buddy", HTTP_POST, []() {
     server.send(200, "text/plain", "Buddy list uploaded");
   }, []() {
     HTTPUpload& upload = server.upload();
     static File fsUploadFile;
-  
+
     if (upload.status == UPLOAD_FILE_START) {
       Serial.println("Starting upload: buddylist.txt");
       fsUploadFile = SPIFFS.open("/buddylist.txt", FILE_WRITE);
@@ -1069,11 +1111,68 @@ void Web_setup()
       BuddyManager::readBuddyList(); // Read the buddy list after upload
     }
   });
-  
+
   server.on("/download-buddy", HTTP_GET, []() {
     File file = SPIFFS.open("/buddylist.txt", "r");
     if (!file || file.isDirectory()) {
       server.send(404, "text/plain", "File not found");
+      return;
+    }
+    server.streamFile(file, "text/plain");
+    file.close();
+  });
+
+server.on("/upload-demo", HTTP_POST, []() {
+  server.send(200, "text/plain", "Demo file uploaded successfully");
+}, []() {
+  HTTPUpload& upload = server.upload();
+  static File fsUploadFile;
+
+  if (upload.status == UPLOAD_FILE_START) {
+    Serial.println("Starting upload: demo.nmea");
+
+    // Disable watchdog during upload to prevent timeout
+    #if defined(ENABLE_REMOTE_SETTINGS)
+    disableLoopWDT();
+    #endif
+
+    // Delete existing file first to ensure overwrite
+    if (SPIFFS.exists("/demo.nmea")) {
+      SPIFFS.remove("/demo.nmea");
+      Serial.println("Old demo.nmea deleted.");
+    }
+
+    // Open new file for writing (fresh)
+    fsUploadFile = SPIFFS.open("/demo.nmea", FILE_WRITE);
+    if (!fsUploadFile) {
+      Serial.println("Failed to open file for writing!");
+    }
+
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    // Feed watchdog during write to prevent timeout
+    yield();
+
+    if (fsUploadFile) {
+      fsUploadFile.write(upload.buf, upload.currentSize);
+    }
+
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (fsUploadFile)
+      fsUploadFile.close();
+    Serial.println("Demo file upload complete.");
+
+    // Re-enable watchdog after upload completes
+    #if defined(ENABLE_REMOTE_SETTINGS)
+    enableLoopWDT();
+    #endif
+  }
+});
+
+
+  server.on("/download-demo", HTTP_GET, []() {
+    File file = SPIFFS.open("/demo.nmea", "r");
+    if (!file || file.isDirectory()) {
+      server.send(404, "text/plain", "Demo file not found");
       return;
     }
     server.streamFile(file, "text/plain");

@@ -304,6 +304,10 @@ void NMEA_setup()
         SoC->Bluetooth->setup();
       }
       break;
+    case CON_DEMO_FILE:
+      // Demo mode will be initialized in Input_loop
+      Serial.println("Demo mode selected - file playback");
+      break;
     case CON_NONE:
     case CON_WIFI_UDP:
     default:
@@ -403,6 +407,13 @@ void NMEA_bridge_buffer(char c)
         n = 0;
 }
 
+// Public wrapper for demo mode to call NMEA_Parse_Character
+void NMEA_ParseChar(char c)
+{
+  NMEA_Parse_Character(c);
+  NMEA_TimeMarker = millis();
+}
+
 void NMEA_loop()
 {
   size_t size;
@@ -475,6 +486,10 @@ void NMEA_loop()
         NMEA_TimeMarker = millis();
       }
     }
+    break;
+  case CON_DEMO_FILE:
+    // Demo mode is handled in Demo_loop() called from Input_loop()
+    // This case intentionally left empty - processing happens elsewhere
     break;
   case CON_NONE:
   default:

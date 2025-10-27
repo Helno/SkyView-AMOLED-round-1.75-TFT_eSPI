@@ -52,6 +52,7 @@
 #include "TFTHelper.h"
 #include "TouchHelper.h"
 #include "BuddyHelper.h"
+#include "DemoHelper.h"
 
 #include "SPIFFS.h"
 #include "SkyView.h"
@@ -75,6 +76,12 @@ bool SPIFFS_is_mounted = false;
 
 /* Poll input source(s) */
 void Input_loop() {
+  // Check if demo mode is active
+  if (settings->connection == CON_DEMO_FILE) {
+    Demo_loop();
+    return;
+  }
+
   switch (settings->protocol)
   {
   case PROTOCOL_GDL90:
@@ -131,6 +138,17 @@ void setup()
     Serial.println("Error: Null pointer detected!");
     return;
   }
+
+  // Synchronize demo_mode flag with connection setting on boot
+  if (settings->connection == CON_DEMO_FILE && !settings->demo_mode) {
+    settings->demo_mode = true;
+    EEPROM_store();
+    Serial.println("Boot: Synchronized demo_mode flag to true (connection is CON_DEMO_FILE)");
+  } else if (settings->connection != CON_DEMO_FILE && settings->demo_mode) {
+    settings->demo_mode = false;
+    EEPROM_store();
+    Serial.println("Boot: Synchronized demo_mode flag to false (connection is not CON_DEMO_FILE)");
+  }
   //temporary settings
  /* settings->adapter       = ADAPTER_TTGO_T5S;
   settings->connection      = CON_BLUETOOTH_LE;
@@ -153,22 +171,27 @@ void setup()
 #if defined(BUTTONS)
   SoC->Button_setup();
 #endif /* BUTTONS */
-  switch (settings->protocol)
-  {
-  case PROTOCOL_GDL90:
-    GDL90_setup();
-    break;
-  case PROTOCOL_NMEA:
-  default:
-    NMEA_setup();
-    break;
-  }
+  // Check if demo mode is active
+  if (settings->connection == CON_DEMO_FILE) {
+    Demo_setup();
+  } else {
+    switch (settings->protocol)
+    {
+    case PROTOCOL_GDL90:
+      GDL90_setup();
+      break;
+    case PROTOCOL_NMEA:
+    default:
+      NMEA_setup();
+      break;
+    }
 
-  /* If a Dongle is connected - try to wake it up */
-  if (settings->connection == CON_SERIAL &&
-      settings->protocol   == PROTOCOL_NMEA) {
-    SerialInput.write("$PSRFC,?*47\r\n");
-    SerialInput.flush();
+    /* If a Dongle is connected - try to wake it up */
+    if (settings->connection == CON_SERIAL &&
+        settings->protocol   == PROTOCOL_NMEA) {
+      SerialInput.write("$PSRFC,?*47\r\n");
+      SerialInput.flush();
+    }
   }
 
 
@@ -252,6 +275,12 @@ void loop()
 void shutdown(const char *msg)
 {
   SoC->WDT_fini();
+
+  /* Shutdown demo mode if active */
+  if (settings->connection == CON_DEMO_FILE) {
+    Demo_fini();
+  }
+
   /* If a Dongle is connected - try to shut it down */
   if (settings->connection == CON_SERIAL &&
       settings->protocol   == PROTOCOL_NMEA) {

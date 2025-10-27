@@ -54,6 +54,8 @@ void parseSettings(JsonObject& root)
       eeprom_block.field.settings.connection = CON_BLUETOOTH_SPP;
     } else if (!strcmp(connection_s,"LE")) {
       eeprom_block.field.settings.connection = CON_BLUETOOTH_LE;
+    } else if (!strcmp(connection_s,"DEMO")) {
+      eeprom_block.field.settings.connection = CON_DEMO_FILE;
     }
   }
 
