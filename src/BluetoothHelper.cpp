@@ -152,7 +152,6 @@ void loadAllowedBLENames()
   file.close();
 }
 
-
 // BluetoothSerial SerialBT;
 String BT_name = HOSTNAME;
 
@@ -199,7 +198,7 @@ class AppClientCallback : public NimBLEClientCallbacks
   void onDisconnect(NimBLEClient* pclient) 
   {
     ESP32_BT_ctl.status = BT_STATUS_NC;
-    PRINTLN(F("BLE: disconnected from Server."));
+    PRINTLN(F("[BLE] disconnected from Server."));
   }
 };
 
@@ -222,7 +221,8 @@ public:
     if (known && advertisedDevice->haveServiceUUID() &&
         advertisedDevice->isAdvertisingService(serviceUUID)) 
     {
-      PRINTLN(F("  --> Known device and matching service UUID. Connecting..."));
+      PRINTLN(F("[BLE]  --> Known device and matching service UUID. Connecting..."));
+      // stop the scan
       NimBLEDevice::getScan()->stop();
 
       delete AppDevice;
@@ -237,16 +237,21 @@ public:
 
 static bool ESP32_BLEConnectToServer() 
 {
+  if (!AppDevice) 
+  {
+    PRINTLN(F("[BLE] No device to connect to."));
+    return false;
+  }
   if (!pClient->connect(AppDevice)) 
   {
-    PRINTLN(F("BLE: Failed to connect to device."));
+    PRINTLN(F("[BLE] Failed to connect to device."));
     return false;
   }
 
   NimBLERemoteService* pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr) 
   {
-    Serial.print(F("BLE: Failed to find our service UUID: "));
+    Serial.print(F("[BLE] Failed to find our service UUID: "));
     PRINTLN(serviceUUID.toString().c_str());
     pClient->disconnect();
     return false;
@@ -255,7 +260,7 @@ static bool ESP32_BLEConnectToServer()
   pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
   if (pRemoteCharacteristic == nullptr) 
   {
-    Serial.print(F("BLE: Failed to find our characteristic UUID: "));
+    Serial.print(F("[BLE] Failed to find our characteristic UUID: "));
     PRINTLN(charUUID.toString().c_str());
     pClient->disconnect();
     return false;
@@ -288,9 +293,18 @@ static void ESP32_Bluetooth_setup()
       PRINTLN("[BLE] Initializing NimBLE...");
       NimBLEDevice::init("");
       pClient = NimBLEDevice::createClient();
+      if (!pClient) 
+      {
+        PRINTLN("[BLE] Failed to create BLE client");
+        return;
+      }
       pClient->setClientCallbacks(new AppClientCallback());
-
       NimBLEScan* pBLEScan = NimBLEDevice::getScan();
+      if (!pBLEScan) 
+      {
+        PRINTLN("[BLE] Failed to create BLE scan");
+        return;
+      }
 #else
       BLEDevice::init("");
       pClient = BLEDevice::createClient();
@@ -300,11 +314,10 @@ static void ESP32_Bluetooth_setup()
 #endif /* USE_NIMBLE */
 
       pBLEScan->setScanCallbacks(new AppAdvertisedDeviceCallbacks(), false);
-
       pBLEScan->setInterval(1349);
       pBLEScan->setWindow(449);
       pBLEScan->setActiveScan(true);
-      pBLEScan->start(1500, false);
+      pBLEScan->start(3000, false); // was 500
       BLE_Notify_TimeMarker = millis();
     }
     break;
@@ -366,7 +379,7 @@ static void ESP32_Bluetooth_loop()
       {
         if (ESP32_BLEConnectToServer()) 
         {
-          PRINTLN(F("BLE: connected to Server."));
+          PRINTLN(F("[BLE] connected to Server."));
         }
         ESP32_BT_ctl.command = BT_CMD_NONE;
       }
@@ -388,7 +401,7 @@ static void ESP32_Bluetooth_loop()
       else if (millis() - BT_TimeMarker > BT_NODATA_TIMEOUT) 
       {
 
-        PRINTLN(F("BLE: attempt to (re)connect..."));
+        PRINTLN(F("[BLE] attempt to (re)connect..."));
         if (pClient) 
         {
           if (pClient->isConnected()) 
@@ -401,7 +414,7 @@ static void ESP32_Bluetooth_loop()
         NimBLEScan* scan = NimBLEDevice::getScan();
         scan->setScanCallbacks(new AppAdvertisedDeviceCallbacks(), false);
         scan->setActiveScan(true);
-        scan->start(50, false);
+        scan->start(500, false);
 #else
         BLEDevice::getScan()->start(3, false);
 #endif /* USE_NIMBLE */
