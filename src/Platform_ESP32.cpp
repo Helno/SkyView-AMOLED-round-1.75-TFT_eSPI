@@ -182,11 +182,20 @@ i2s_config_t i2s_config = {
 };
 
 i2s_pin_config_t pin_config = {
+    .mck_io_num   = I2S_PIN_NO_CHANGE,  // CRITICAL: Disable MCLK to prevent GPIO0 conflict
     .bck_io_num   = SOC_GPIO_PIN_BCLK,
     .ws_io_num    = SOC_GPIO_PIN_LRCLK,
     .data_out_num = SOC_GPIO_PIN_DOUT,
-    .data_in_num  = -1  // Not used
+    .data_in_num  = I2S_PIN_NO_CHANGE   // Not used
 };
+
+// Audio task for non-blocking playback
+#define AUDIO_MESSAGE_MAX_LEN 256
+TaskHandle_t audioTaskHandle = NULL;
+QueueHandle_t audioQueue = NULL;
+
+// Forward declaration
+void audioTask(void *parameter);
 #endif /* AUDIO */
 
 // RTC_DATA_ATTR int bootCount = 0;
@@ -440,7 +449,27 @@ static void ESP32_setup()
   // Initialize amplifier enable pin
   pinMode(SOC_GPIO_AMP_ENABLE, OUTPUT);
   digitalWrite(SOC_GPIO_AMP_ENABLE, LOW);  // Start with amplifier OFF
-  Serial.println("Audio amplifier pin initialized (GPIO 47)");
+
+  // Create audio queue and task for non-blocking playback
+  audioQueue = xQueueCreate(5, AUDIO_MESSAGE_MAX_LEN);  // Queue for 5 messages
+  if (audioQueue == NULL) {
+    Serial.println("ERROR: Failed to create audio queue!");
+  } else {
+    // Create audio task pinned to core 0 (opposite of main loop on core 1)
+    xTaskCreatePinnedToCore(
+      audioTask,           // Task function
+      "Audio Task",        // Task name
+      8192,                // Stack size (8KB for audio processing)
+      NULL,                // Parameters
+      2,                   // Priority (higher than main loop)
+      &audioTaskHandle,    // Task handle
+      0                    // Core 0
+    );
+
+    if (audioTaskHandle == NULL) {
+      Serial.println("ERROR: Failed to create audio task!");
+    }
+  }
 #endif
 }
 
@@ -1040,15 +1069,10 @@ static bool play_file(char *filename, int volume)
 //          Serial.println("prepare data");
           state = DATA;
         }
+        //initialize i2s with configurations above
         i2s_driver_install((i2s_port_t)i2s_num, &i2s_config, 0, NULL);
         i2s_set_pin((i2s_port_t)i2s_num, &pin_config);
         i2s_zero_dma_buffer((i2s_port_t)i2s_num);  // Clear DMA buffer to prevent noise
-
-        // CRITICAL: Re-configure GPIO0 after I2S pin setup
-        // I2S driver may disable pull-ups on nearby GPIO pins
-        gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
-        gpio_set_pull_mode(GPIO_NUM_0, GPIO_PULLUP_ONLY);
-
         //set sample rates of i2s to sample rate of wav file
         i2s_set_sample_rates((i2s_port_t)i2s_num, wavProps.sampleRate);
         break;
@@ -1072,19 +1096,73 @@ static bool play_file(char *filename, int volume)
     wavfile.close();
     if (state == DATA) {
       i2s_driver_uninstall((i2s_port_t)i2s_num); //stop & destroy i2s driver
-
-      // CRITICAL: Restore GPIO0 pull-up after I2S driver uninstall
-      gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
-      gpio_set_pull_mode(GPIO_NUM_0, GPIO_PULLUP_ONLY);
     }
 
     return true;
 }
 
+// Audio task - runs continuously and processes audio messages from queue
+void audioTask(void *parameter) {
+  char message[AUDIO_MESSAGE_MAX_LEN];
+  char filename[MAX_FILENAME_LEN];
+
+  while (true) {
+    // Wait for audio message from queue (blocking)
+    if (xQueueReceive(audioQueue, &message, portMAX_DELAY) == pdTRUE) {
+      if (settings->voice == VOICE_OFF) {
+        continue;  // Skip if voice is disabled
+      }
+
+#if defined(SD_CARD) && defined(LILYGO_AMOLED_1_75)
+      // Reinitialize SD SPI bus before first access
+      SD_SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+      delay(50);
+#endif
+
+      // Enable audio amplifier
+      digitalWrite(SOC_GPIO_AMP_ENABLE, HIGH);
+      delay(200);  // Give amplifier time to power up
+
+      bool wdt_status = loopTaskWDTEnabled;
+      if (wdt_status) {
+        disableLoopWDT();
+      }
+
+      // Parse message and play audio files
+      char messageCopy[AUDIO_MESSAGE_MAX_LEN];
+      strncpy(messageCopy, message, AUDIO_MESSAGE_MAX_LEN - 1);
+      messageCopy[AUDIO_MESSAGE_MAX_LEN - 1] = '\0';
+
+      char *word = strtok(messageCopy, " ");
+
+      while (word != NULL) {
+        strcpy(filename, WAV_FILE_PREFIX);
+        strcat(filename, settings->voice == VOICE_1 ? VOICE1_SUBDIR :
+                        (settings->voice == VOICE_2 ? VOICE2_SUBDIR :
+                        (settings->voice == VOICE_3 ? VOICE3_SUBDIR :
+                         "" )));
+        strcat(filename, word);
+        strcat(filename, WAV_FILE_SUFFIX);
+
+        int volume = (settings->voice == VOICE_3) ? 1 : 0;
+        play_file(filename, volume);
+        word = strtok(NULL, " ");
+
+        yield();
+      }
+
+      if (wdt_status) {
+        enableLoopWDT();
+      }
+
+      // Disable amplifier after playback
+      digitalWrite(SOC_GPIO_AMP_ENABLE, LOW);
+    }
+  }
+}
+
 static void ESP32_TTS(char *message)
 {
-    char filename[MAX_FILENAME_LEN];
-
     if (settings->voice == VOICE_OFF)
       return;
 
@@ -1094,94 +1172,22 @@ static void ESP32_TTS(char *message)
     return;
 #endif
 
-#if defined(SD_CARD) && defined(LILYGO_AMOLED_1_75)
-    // Reinitialize SD SPI bus before first access
-    // This ensures SPI pins are correctly configured after WiFi/display init
-    Serial.println("Reinitializing SD SPI bus for audio playback...");
-    SD_SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
-    delay(50);
-#endif
+    // Check if audio task and queue are initialized
+    if (audioQueue == NULL || audioTaskHandle == NULL) {
+      Serial.println("ERROR: Audio task not initialized!");
+      return;
+    }
 
-    // Enable audio amplifier
-    Serial.println("Enabling audio amplifier...");
-    digitalWrite(SOC_GPIO_AMP_ENABLE, HIGH);
-    delay(200);  // Give amplifier time to power up
+    // Queue the message for non-blocking playback
+    char messageBuffer[AUDIO_MESSAGE_MAX_LEN];
+    strncpy(messageBuffer, message, AUDIO_MESSAGE_MAX_LEN - 1);
+    messageBuffer[AUDIO_MESSAGE_MAX_LEN - 1] = '\0';
 
-    if (strcmp(message, "POST")) {   // *not* the post-booting demo
-      // Don't call SD.cardType() here - it can trigger unwanted remount attempts
-      // Instead, just try to access files and handle errors in play_file()
-#if defined(USE_EPAPER)
-      while (!SoC->EPD_is_ready()) {yield();}
-      EPD_Message("VOICE", "ALERT");
-      SoC->EPD_update(EPD_UPDATE_FAST);
-      while (!SoC->EPD_is_ready()) {yield();}
-#endif /* USE_EPAPER */
-      bool wdt_status = loopTaskWDTEnabled;
-
-      if (wdt_status) {
-        disableLoopWDT();
-      }
-
-      char *word = strtok (message, " ");
-
-      while (word != NULL)
-      {
-          strcpy(filename, WAV_FILE_PREFIX);
-          strcat(filename, settings->voice == VOICE_1 ? VOICE1_SUBDIR :
-                          (settings->voice == VOICE_2 ? VOICE2_SUBDIR :
-                          (settings->voice == VOICE_3 ? VOICE3_SUBDIR :
-                           "" )));
-          strcat(filename, word);
-          strcat(filename, WAV_FILE_SUFFIX);
-          // voice_3 in the existing collection of .wav files is quieter than voice_1,
-          // so make it a bit louder since we use it for more-urgent advisories
-          int volume = (settings->voice == VOICE_3)? 1 : 0;
-          play_file(filename, volume);
-          word = strtok (NULL, " ");
-
-          yield();
-
-          /* Poll input source(s) */
-          Input_loop();
-      }
-
-      if (wdt_status) {
-        enableLoopWDT();
-      }
-
-      // Disable amplifier after playback
-      digitalWrite(SOC_GPIO_AMP_ENABLE, LOW);
-      Serial.println("Audio amplifier disabled.");
-
-   } else {   /* post-booting */
-      // Don't call SD.cardType() - let play_file() handle file access errors
-      // SD card should be ready from initialization in ESP32_setup()
-
-      //Start-up tones
-      /* demonstrate the voice output */
-      delay(1500);
-      settings->voice = VOICE_1;
-      strcpy(filename, WAV_FILE_PREFIX);
-      strcat(filename, VOICE1_SUBDIR);
-      strcat(filename, "notice");
-      strcat(filename, WAV_FILE_SUFFIX);
-      if (!play_file(filename, 0)) {
-        Serial.println(F("POST: Failed to play voice1 notice.wav - check SD card and files"));
-      }
-      delay(1500);
-      settings->voice = VOICE_2;
-      strcpy(filename, WAV_FILE_PREFIX);
-      strcat(filename, VOICE2_SUBDIR);
-      strcat(filename, "notice");
-      strcat(filename, WAV_FILE_SUFFIX);
-      if (!play_file(filename, 0)) {   // No volume adjustment needed
-        Serial.println(F("POST: Failed to play voice2 notice.wav - check SD card and files"));
-      }
-      delay(1000);
-
-      // Disable amplifier after POST audio
-      digitalWrite(SOC_GPIO_AMP_ENABLE, LOW);
-      Serial.println("POST audio complete. Amplifier disabled.");
+    if (xQueueSend(audioQueue, &messageBuffer, 0) != pdTRUE) {
+      // Queue full - drop oldest message and try again
+      char dummyBuffer[AUDIO_MESSAGE_MAX_LEN];
+      xQueueReceive(audioQueue, &dummyBuffer, 0);  // Remove one item
+      xQueueSend(audioQueue, &messageBuffer, 0);   // Try again
     }
 }
 #endif /* AUDIO */
